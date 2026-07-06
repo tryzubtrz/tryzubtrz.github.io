@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PikaDrop • Містерій Дропи</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; }
+        .tab-btn.active { color: #FFCC00; border-bottom: 3px solid #FFCC00; }
+        .item-card { transition: transform 0.2s ease; }
+        .item-card:active { transform: scale(0.96); }
+    </style>
+</head>
+<body class="bg-zinc-950 text-white">
+
+    <!-- Header -->
+    <div class="bg-black px-4 py-3 flex justify-between items-center border-b border-zinc-800 sticky top-0 z-50">
+        <div class="flex items-center gap-x-3">
+            <div class="w-9 h-9 bg-[#FFCC00] rounded-2xl flex items-center justify-center">
+                <i class="fa-solid fa-bolt text-black text-2xl"></i>
+            </div>
+            <div>
+                <div class="text-2xl font-bold">PikaDrop</div>
+                <div class="text-xs text-zinc-400 -mt-1">Веселі містерій дропи</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DISCOVER -->
+    <div id="tab-discover" class="tab-content p-4">
+        <input type="text" id="search-input" placeholder="Пошук дропів..." 
+               class="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-3 mb-4 text-sm"
+               oninput="filterItems()">
+
+        <div class="flex gap-2 mb-4 overflow-x-auto pb-1">
+            <button onclick="filterBy('all')" class="px-4 py-1.5 bg-[#FFCC00] text-black rounded-2xl text-sm font-medium">All</button>
+            <button onclick="filterBy('low')" class="px-4 py-1.5 bg-zinc-800 rounded-2xl text-sm">Low stock</button>
+            <button onclick="filterBy('cheap')" class="px-4 py-1.5 bg-zinc-800 rounded-2xl text-sm">До $100</button>
+        </div>
+
+        <div class="flex justify-between px-1 mb-2">
+            <div class="font-semibold">Доступні дропи</div>
+            <div id="items-count" class="text-xs text-zinc-400"></div>
+        </div>
+
+        <div id="items-grid" class="grid grid-cols-2 gap-3"></div>
+    </div>
+
+    <!-- LOCATIONS -->
+    <div id="tab-locations" class="tab-content p-4 hidden">
+        <div class="font-semibold mb-3">Локації</div>
+        <div id="locations-list" class="space-y-2"></div>
+        <button onclick="addLocation()" class="mt-4 w-full py-3 bg-zinc-800 rounded-2xl text-sm">+ Додати локацію</button>
+    </div>
+
+    <!-- WISHLIST -->
+    <div id="tab-wishlist" class="tab-content p-4 hidden">
+        <div class="font-semibold mb-3">Твій Wishlist</div>
+        <div id="wishlist-list" class="space-y-2"></div>
+    </div>
+
+    <!-- PROFILE -->
+    <div id="tab-profile" class="tab-content p-4 hidden">
+        <div class="bg-zinc-900 rounded-3xl p-5">
+            <div class="font-bold text-xl">@demo_vadym</div>
+            <div class="text-zinc-400 mt-1">Колекціонер PikaDrop</div>
+        </div>
+    </div>
+
+    <!-- ADMIN -->
+    <div id="tab-admin" class="tab-content p-4 hidden">
+        <div class="text-red-400 font-bold mb-3 flex items-center gap-x-2">
+            <i class="fa-solid fa-shield-halved"></i> ADMIN PANEL
+        </div>
+        
+        <button onclick="addNewItem()" class="w-full py-3 bg-red-600 rounded-2xl mb-4 font-semibold">
+            + Додати новий дроп
+        </button>
+
+        <div id="admin-items-list" class="space-y-2 text-sm"></div>
+    </div>
+
+    <!-- Bottom Navigation -->
+    <div class="fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-zinc-700 flex text-xs">
+        <button onclick="switchTab('discover')" class="flex-1 py-3 tab-btn active" data-tab="discover">
+            <i class="fa-solid fa-compass text-lg"></i><br><span class="text-[10px]">Discover</span>
+        </button>
+        <button onclick="switchTab('locations')" class="flex-1 py-3 tab-btn" data-tab="locations">
+            <i class="fa-solid fa-map text-lg"></i><br><span class="text-[10px]">Locations</span>
+        </button>
+        <button onclick="switchTab('wishlist')" class="flex-1 py-3 tab-btn" data-tab="wishlist">
+            <i class="fa-solid fa-heart text-lg"></i><br><span class="text-[10px]">Wishlist</span>
+        </button>
+        <button onclick="switchTab('profile')" class="flex-1 py-3 tab-btn" data-tab="profile">
+            <i class="fa-solid fa-user text-lg"></i><br><span class="text-[10px]">Profile</span>
+        </button>
+        <button onclick="switchTab('admin')" class="flex-1 py-3 tab-btn text-red-400" data-tab="admin">
+            <i class="fa-solid fa-shield-halved text-lg"></i><br><span class="text-[10px]">Admin</span>
+        </button>
+    </div>
+
+    <script>
+        // ================== DATA ==================
+        let items = [
+            { id: 1, name: "Neon Pika Sculpture", price: 89, stock: 5, desc: "Яскрава неонова скульптура в стилі Пікачу" },
+            { id: 2, name: "Electric Memory Box", price: 145, stock: 2, desc: "Коробка з електричним посланням" },
+            { id: 3, name: "Pika Zine 2025", price: 55, stock: 12, desc: "Рідкісний арт-зін про Пікачу" }
+        ];
+
+        let locations = [];
+        let wishlist = [];
+        let currentFilter = 'all';
+
+        // ================== RENDER ==================
+        function renderItems(filteredItems) {
+            const grid = document.getElementById('items-grid');
+            grid.innerHTML = '';
+
+            filteredItems.forEach(item => {
+                const card = document.createElement('div');
+                card.className = `bg-zinc-900 border border-zinc-700 p-3 rounded-3xl cursor-pointer item-card`;
+                card.innerHTML = `
+                    <div class="font-semibold">${item.name}</div>
+                    <div class="flex justify-between mt-2">
+                        <span class="text-[#FFCC00] font-bold">$${item.price}</span>
+                        <span class="text-xs text-zinc-400">${item.stock} left</span>
+                    </div>
+                `;
+                card.onclick = () => showItemDetail(item);
+                grid.appendChild(card);
+            });
+
+            document.getElementById('items-count').innerText = `${filteredItems.length} дропів`;
+        }
+
+        function filterItems() {
+            const search = document.getElementById('search-input').value.toLowerCase();
+            let result = items;
+
+            if (currentFilter === 'low') result = result.filter(i => i.stock <= 3);
+            if (currentFilter === 'cheap') result = result.filter(i => i.price < 100);
+            if (search) result = result.filter(i => i.name.toLowerCase().includes(search));
+
+            renderItems(result);
+        }
+
+        function filterBy(type) {
+            currentFilter = type;
+            filterItems();
+        }
+
+        function showItemDetail(item) {
+            const modal = document.createElement('div');
+            modal.className = `fixed inset-0 bg-black/90 z-[100] flex items-end`;
+            modal.innerHTML = `
+                <div class="bg-zinc-900 w-full rounded-t-3xl p-5">
+                    <div class="flex justify-between mb-4">
+                        <div class="text-2xl font-bold">${item.name}</div>
+                        <button onclick="this.closest('.fixed').remove()" class="text-3xl">×</button>
+                    </div>
+                    <div class="text-4xl font-bold text-[#FFCC00] mb-4">$${item.price}</div>
+                    <div class="text-zinc-300 mb-6">${item.desc}</div>
+                    
+                    <button onclick="buyItem(${item.id}, this)" 
+                            class="w-full py-4 bg-[#FFCC00] text-black font-bold rounded-2xl active:scale-[0.985]">
+                        КУПИТИ ЗАРАЗ
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        function buyItem(id, button) {
+            const item = items.find(i => i.id === id);
+            if (!item || item.stock <= 0) return;
+
+            item.stock--;
+            button.innerText = 'Куплено!';
+            button.disabled = true;
+
+            setTimeout(() => {
+                button.closest('.fixed').remove();
+                renderItems(items);
+                renderAdminItems();
+            }, 900);
+        }
+
+        // ================== TABS ==================
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById('tab-' + tab).classList.remove('hidden');
+
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            const activeBtn = document.querySelector(`[data-tab="${tab}"]`);
+            if (activeBtn) activeBtn.classList.add('active');
+
+            if (tab === 'admin') renderAdminItems();
+            if (tab === 'locations') renderLocations();
+            if (tab === 'wishlist') renderWishlist();
+        }
+
+        // ================== ADMIN ==================
+        function renderAdminItems() {
+            const container = document.getElementById('admin-items-list');
+            container.innerHTML = '';
+
+            items.forEach(item => {
+                const div = document.createElement('div');
+                div.className = `bg-zinc-900 p-3 rounded-2xl flex justify-between items-center`;
+                div.innerHTML = `
+                    <div>
+                        <div class="font-medium">${item.name}</div>
+                        <div class="text-xs text-zinc-400">$${item.price} • ${item.stock} шт.</div>
+                    </div>
+                    <button onclick="deleteItem(${item.id})" class="text-red-400 text-xs px-3">Видалити</button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function addNewItem() {
+            const name = prompt("Назва дропу:");
+            if (!name) return;
+
+            const price = parseInt(prompt("Ціна (USD):")) || 50;
+            const stock = parseInt(prompt("Кількість:")) || 5;
+
+            items.push({
+                id: Date.now(),
+                name: name,
+                price: price,
+                stock: stock,
+                desc: "Новий дроп від команди PikaDrop"
+            });
+
+            renderItems(items);
+            renderAdminItems();
+        }
+
+        function deleteItem(id) {
+            if (!confirm("Видалити цей дроп?")) return;
+            items = items.filter(i => i.id !== id);
+            renderItems(items);
+            renderAdminItems();
+        }
+
+        // ================== LOCATIONS ==================
+        function renderLocations() {
+            const container = document.getElementById('locations-list');
+            container.innerHTML = locations.length === 0 
+                ? '<div class="text-zinc-400">Локацій поки немає</div>' 
+                : locations.map(loc => `<div class="bg-zinc-900 p-3 rounded-2xl">${loc}</div>`).join('');
+        }
+
+        function addLocation() {
+            const name = prompt("Назва локації:");
+            if (name) {
+                locations.push(name);
+                renderLocations();
+            }
+        }
+
+        // ================== WISHLIST ==================
+        function renderWishlist() {
+            const container = document.getElementById('wishlist-list');
+            const wishItems = items.filter(i => wishlist.includes(i.id));
+            
+            container.innerHTML = wishItems.length === 0 
+                ? '<div class="text-zinc-400">Wishlist порожній</div>' 
+                : wishItems.map(item => `<div class="bg-zinc-900 p-3 rounded-2xl">${item.name} — $${item.price}</div>`).join('');
+        }
+
+        // ================== INIT ==================
+        function init() {
+            renderItems(items);
+            renderLocations();
+
+            // Показуємо першу вкладку
+            document.getElementById('tab-discover').classList.remove('hidden');
+            document.querySelector('[data-tab="discover"]').classList.add('active');
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
