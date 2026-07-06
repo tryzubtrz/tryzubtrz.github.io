@@ -1,1 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>PikaDrop</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+:root{
+  --bg:#0b0b0d;--surface:#16161a;--surface-raised:#1e1e24;--border:#2a2a31;
+  --yellow:#f7d51a;--yellow-dim:#b9a213;--text:#f5f5f0;--text-dim:#9a9aa2;
+  --danger:#ff5c5c;--radius:14px;
+  --font-display:'Archivo Black',sans-serif;--font-body:'Manrope',sans-serif;--font-mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-body);-webkit-font-smoothing:antialiased}
+.app-shell{max-width:560px;margin:0 auto;min-height:100vh;padding-bottom:84px}
+h1,h2,h3{font-family:var(--font-display);letter-spacing:-0.01em;text-transform:uppercase;margin:0}
+.price{font-family:var(--font-mono);font-weight:700;color:var(--yellow)}
+.btn-primary{background:var(--yellow);color:#0b0b0d;border:none;border-radius:var(--radius);font-family:var(--font-body);font-weight:800;font-size:16px;padding:16px 20px;width:100%;cursor:pointer}
+.btn-primary:disabled{background:var(--surface-raised);color:var(--text-dim);cursor:not-allowed}
+.btn-secondary{background:transparent;color:var(--text);border:1px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);font-weight:600;padding:12px 16px;cursor:pointer}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.stamp-badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--yellow);border:1.5px dashed var(--yellow-dim);border-radius:100px;padding:3px 10px;transform:rotate(-2deg);background:rgba(247,213,26,0.06)}
+.input,select{background:var(--surface-raised);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font-body);padding:12px 14px;font-size:15px;width:100%}
+.grid-catalog{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px}
+.lang-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:24px}
+.lang-tile{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:20px 12px;text-align:center;font-weight:700;color:var(--text);cursor:pointer}
+</style>
+</head>
+<body>
+<div id="root"></div>
 
+<script type="text/babel" data-presets="react">
+const { useState, useEffect } = React;
+
+// ====== НАЛАШТУВАННЯ: встав сюди URL свого бекенду ======
+const API_URL = "https://your-backend-domain.example.com";
+
+// ====== i18n ======
+const translations = {
+  en:{chooseLanguage:'Choose your language',catalog:'Catalog',search:'Search products…',country:'Country',city:'City',district:'District',sortPopular:'Most popular',sortPriceAsc:'Price: low to high',sortPriceDesc:'Price: high to low',buy:'Buy now',outOfStock:'Sold out',addToWishlist:'Add to wishlist',removeFromWishlist:'Remove from wishlist',pickupPoint:'Pickup point',reviews:'Reviews',purchasedTimes:'{count} bought this',weight:'Weight',width:'Width',height:'Height',admin:'Admin',save:'Save'},
+  uk:{chooseLanguage:'Оберіть мову',catalog:'Каталог',search:'Пошук товарів…',country:'Країна',city:'Місто',district:'Район',sortPopular:'Найпопулярніші',sortPriceAsc:'Ціна: спочатку дешевші',sortPriceDesc:'Ціна: спочатку дорожчі',buy:'Купити',outOfStock:'Розпродано',addToWishlist:'Додати в обране',removeFromWishlist:'Прибрати з обраного',pickupPoint:'Точка видачі',reviews:'Відгуки',purchasedTimes:'Купили {count} разів',weight:'Вага',width:'Ширина',height:'Висота',admin:'Адмінка',save:'Зберегти'},
+  ru:{chooseLanguage:'Выберите язык',catalog:'Каталог',search:'Поиск товаров…',country:'Страна',city:'Город',district:'Район',sortPopular:'Популярные',sortPriceAsc:'Цена: сначала дешевле',sortPriceDesc:'Цена: сначала дороже',buy:'Купить',outOfStock:'Распродано',addToWishlist:'В избранное',removeFromWishlist:'Убрать из избранного',pickupPoint:'Точка выдачи',reviews:'Отзывы',purchasedTimes:'Куплено {count} раз',weight:'Вес',width:'Ширина',height:'Высота',admin:'Админка',save:'Сохранить'},
+  es:{chooseLanguage:'Elige tu idioma',catalog:'Catálogo',search:'Buscar productos…',country:'País',city:'Ciudad',district:'Distrito',sortPopular:'Más populares',sortPriceAsc:'Precio: menor a mayor',sortPriceDesc:'Precio: mayor a menor',buy:'Comprar',outOfStock:'Agotado',addToWishlist:'Añadir a favoritos',removeFromWishlist:'Quitar de favoritos',pickupPoint:'Punto de recogida',reviews:'Reseñas',purchasedTimes:'{count} compras',weight:'Peso',width:'Ancho',height:'Alto',admin:'Admin',save:'Guardar'},
+  fr:{chooseLanguage:'Choisissez votre langue',catalog:'Catalogue',search:'Rechercher des produits…',country:'Pays',city:'Ville',district:'Quartier',sortPopular:'Les plus populaires',sortPriceAsc:'Prix croissant',sortPriceDesc:'Prix décroissant',buy:'Acheter',outOfStock:'Épuisé',addToWishlist:'Ajouter aux favoris',removeFromWishlist:'Retirer des favoris',pickupPoint:'Point de retrait',reviews:'Avis',purchasedTimes:'Acheté {count} fois',weight:'Poids',width:'Largeur',height:'Hauteur',admin:'Admin',save:'Enregistrer'},
+  pl:{chooseLanguage:'Wybierz język',catalog:'Katalog',search:'Szukaj produktów…',country:'Kraj',city:'Miasto',district:'Dzielnica',sortPopular:'Najpopularniejsze',sortPriceAsc:'Cena: od najniższej',sortPriceDesc:'Cena: od najwyższej',buy:'Kup teraz',outOfStock:'Wyprzedane',addToWishlist:'Dodaj do ulubionych',removeFromWishlist:'Usuń z ulubionych',pickupPoint:'Punkt odbioru',reviews:'Opinie',purchasedTimes:'Kupiono {count} razy',weight:'Waga',width:'Szerokość',height:'Wysokość',admin:'Admin',save:'Zapisz'},
+  zh:{chooseLanguage:'选择语言',catalog:'商品目录',search:'搜索商品…',country:'国家',city:'城市',district:'区域',sortPopular:'最受欢迎',sortPriceAsc:'价格从低到高',sortPriceDesc:'价格从高到低',buy:'立即购买',outOfStock:'已售罄',addToWishlist:'加入收藏',removeFromWishlist:'取消收藏',pickupPoint:'取货点',reviews:'评价',purchasedTimes:'已购买 {count} 次',weight:'重量',width:'宽度',height:'高度',admin:'管理后台',save:'保存'},
+  hi:{chooseLanguage:'अपनी भाषा चुनें',catalog:'कैटलॉग',search:'उत्पाद खोजें…',country:'देश',city:'शहर',district:'क्षेत्र',sortPopular:'सबसे लोकप्रिय',sortPriceAsc:'कीमत: कम से ज़्यादा',sortPriceDesc:'कीमत: ज़्यादा से कम',buy:'अभी खरीदें',outOfStock:'स्टॉक खत्म',addToWishlist:'विशलिस्ट में जोड़ें',removeFromWishlist:'विशलिस्ट से हटाएं',pickupPoint:'पिकअप पॉइंट',reviews:'समीक्षाएं',purchasedTimes:'{count} बार खरीदा गया',weight:'वज़न',width:'चौड़ाई',height:'ऊंचाई',admin:'एडमिन',save:'सहेजें'},
+};
+const LOCALE_LABELS = {en:'English',uk:'Українська',ru:'Русский',es:'Español',fr:'Français',pl:'Polski',zh:'中文',hi:'हिन्दी'};
+function t(locale,key,vars={}){
+  const dict = translations[locale] || translations.en;
+  let str = dict[key] || translations.en[key] || key;
+  Object.entries(vars).forEach(([k,v]) => { str = str.replace(`{${k}}`, v); });
+  return str;
+}
+
+// ====== Telegram WebApp helpers ======
+function getTg(){ return window.Telegram && window.Telegram.WebApp; }
+function initTelegram(){
+  const tg = getTg();
+  if (!tg) return;
+  tg.ready(); tg.expand();
+  tg.setHeaderColor && tg.setHeaderColor('#0b0b0d');
+  tg.setBackgroundColor && tg.setBackgroundColor('#0b0b0d');
+}
+function getInitData(){ const tg = getTg(); return tg ? tg.initData : ''; }
+function openInvoice(url, cb){ const tg = getTg(); if (tg) tg.openInvoice(url, cb); }
+
+// ====== API client ======
+async function api(path, options = {}) {
+  const res = await fetch(API_URL + path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Telegram-Init-Data': getInitData(),
+      ...(options.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || ('Request failed: ' + res.status));
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+// ====== Screens ======
+function LanguageSelect({ onChoose }) {
+  return (
+    <div className="app-shell">
+      <div style={{padding:'48px 24px 0', textAlign:'center'}}>
+        <h1 style={{fontSize:22}}>PikaDrop</h1>
+        <p style={{color:'var(--text-dim)', marginTop:8}}>Choose your language / Оберіть мову</p>
+      </div>
+      <div className="lang-grid">
+        {Object.keys(LOCALE_LABELS).map((locale) => (
+          <button key={locale} className="lang-tile" onClick={() => onChoose(locale)}>
+            {LOCALE_LABELS[locale]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LocationFilter({ locale, filters, setFilters }) {
+  const [countries, setCountries] = useState([]);
+  const [cities, setCities] = useState([]);
+  const [districts, setDistricts] = useState([]);
+
+  useEffect(() => { api('/api/locations/countries').then(setCountries).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!filters.countryId) return setCities([]);
+    api('/api/locations/countries/' + filters.countryId + '/cities').then(setCities).catch(() => {});
+  }, [filters.countryId]);
+  useEffect(() => {
+    if (!filters.cityId) return setDistricts([]);
+    api('/api/locations/cities/' + filters.cityId + '/districts').then(setDistricts).catch(() => {});
+  }, [filters.cityId]);
+
+  return (
+    <div style={{display:'flex', gap:8, padding:'0 16px 12px'}}>
+      <select className="input" value={filters.countryId || ''}
+        onChange={(e) => setFilters({ ...filters, countryId: e.target.value || null, cityId: null, districtId: null })}>
+        <option value="">{t(locale,'country')}</option>
+        {countries.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+      <select className="input" value={filters.cityId || ''} disabled={!filters.countryId}
+        onChange={(e) => setFilters({ ...filters, cityId: e.target.value || null, districtId: null })}>
+        <option value="">{t(locale,'city')}</option>
+        {cities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+      <select className="input" value={filters.districtId || ''} disabled={!filters.cityId}
+        onChange={(e) => setFilters({ ...filters, districtId: e.target.value || null })}>
+        <option value="">{t(locale,'district')}</option>
+        {districts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+      </select>
+    </div>
+  );
+}
+
+function ProductCard({ product, locale, onOpen }) {
+  const images = (product.product_images || []).slice().sort((a,b) => a.position - b.position);
+  const image = images[0] && images[0].url;
+  return (
+    <div className="card" style={{cursor:'pointer'}} onClick={() => onOpen(product.id)}>
+      <div style={{aspectRatio:'1', background:'var(--surface-raised)'}}>
+        {image && <img src={image} alt={product.title} style={{width:'100%', height:'100%', objectFit:'cover'}} />}
+      </div>
+      <div style={{padding:10}}>
+        <div style={{fontWeight:700, fontSize:14, marginBottom:6}}>{product.title}</div>
+        <div className="price" style={{fontSize:16, marginBottom:6}}>{product.price_amount} {product.currency}</div>
+        {product.purchase_count > 0 && (
+          <span className="stamp-badge">✓ {t(locale,'purchasedTimes',{count:product.purchase_count})}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Catalog({ locale, onOpenProduct }) {
+  const [filters, setFilters] = useState({ countryId:null, cityId:null, districtId:null, search:'', sort:'newest' });
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (filters.districtId) params.set('districtId', filters.districtId);
+    if (filters.search) params.set('search', filters.search);
+    if (filters.sort) params.set('sort', filters.sort);
+    api('/api/products?' + params.toString()).then(setProducts).catch(() => setProducts([])).finally(() => setLoading(false));
+  }, [filters.districtId, filters.search, filters.sort]);
+
+  return (
+    <div>
+      <div style={{padding:'16px 16px 0'}}>
+        <h1 style={{fontSize:20, marginBottom:12}}>PikaDrop</h1>
+        <input className="input" placeholder={t(locale,'search')} value={filters.search}
+          onChange={(e) => setFilters({ ...filters, search: e.target.value })} />
+      </div>
+      <LocationFilter locale={locale} filters={filters} setFilters={setFilters} />
+      <div style={{padding:'0 16px 8px'}}>
+        <select className="input" value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value })}>
+          <option value="newest">{t(locale,'sortPopular')}</option>
+          <option value="popular">{t(locale,'sortPopular')}</option>
+          <option value="price_asc">{t(locale,'sortPriceAsc')}</option>
+          <option value="price_desc">{t(locale,'sortPriceDesc')}</option>
+        </select>
+      </div>
+      {loading ? (
+        <div style={{padding:24, textAlign:'center', color:'var(--text-dim)'}}>…</div>
+      ) : (
+        <div className="grid-catalog">
+          {products.map((p) => <ProductCard key={p.id} product={p} locale={locale} onOpen={onOpenProduct} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProductDetail({ locale, productId, onBack }) {
+  const [product, setProduct] = useState(null);
+  const [buying, setBuying] = useState(false);
+  const [wishlisted, setWishlisted] = useState(false);
+
+  useEffect(() => { api('/api/products/' + productId).then(setProduct).catch(() => {}); }, [productId]);
+
+  async function handleBuy() {
+    setBuying(true);
+    try {
+      const { invoiceUrl } = await api('/api/orders/create-invoice', { method:'POST', body: JSON.stringify({ productId }) });
+      openInvoice(invoiceUrl, (status) => {
+        setBuying(false);
+        if (status === 'paid') api('/api/products/' + productId).then(setProduct);
+      });
+    } catch (err) {
+      setBuying(false);
+      alert(err.message);
+    }
+  }
+
+  async function toggleWishlist() {
+    if (wishlisted) await api('/api/products/' + productId + '/wishlist', { method:'DELETE' });
+    else await api('/api/products/' + productId + '/wishlist', { method:'POST', body: JSON.stringify({}) });
+    setWishlisted(!wishlisted);
+  }
+
+  if (!product) return <div style={{padding:24}}>…</div>;
+  const images = (product.product_images || []).slice().sort((a,b) => a.position - b.position);
+  const pickup = product.pickup_points;
+
+  return (
+    <div>
+      <button className="btn-secondary" style={{margin:16, width:'auto'}} onClick={onBack}>← back</button>
+      <div style={{display:'flex', overflowX:'auto', gap:8, padding:'0 16px'}}>
+        {images.map((img) => (
+          <img key={img.url} src={img.url} style={{width:'85%', flexShrink:0, borderRadius:14, aspectRatio:'1', objectFit:'cover'}} />
+        ))}
+      </div>
+      <div style={{padding:16}}>
+        <h2 style={{fontSize:20}}>{product.title}</h2>
+        <div className="price" style={{fontSize:24, margin:'12px 0'}}>{product.price_amount} {product.currency}</div>
+        <p style={{color:'var(--text-dim)', lineHeight:1.5}}>{product.description}</p>
+        <div style={{display:'flex', gap:16, margin:'16px 0', fontSize:13, color:'var(--text-dim)'}}>
+          {product.weight_g && <span>{t(locale,'weight')}: {product.weight_g}g</span>}
+          {product.width_mm && <span>{t(locale,'width')}: {product.width_mm}mm</span>}
+          {product.height_mm && <span>{t(locale,'height')}: {product.height_mm}mm</span>}
+        </div>
+        {pickup && (
+          <div className="card" style={{padding:14, marginBottom:16}}>
+            <div style={{fontWeight:700, marginBottom:6}}>📍 {t(locale,'pickupPoint')}</div>
+            {pickup.photo_url && <img src={pickup.photo_url} style={{width:'100%', borderRadius:10, marginBottom:8}} />}
+            <div style={{fontWeight:600}}>{pickup.name}</div>
+            <div style={{color:'var(--text-dim)', fontSize:13}}>{pickup.address}</div>
+            {pickup.working_hours && <div style={{color:'var(--text-dim)', fontSize:13, marginTop:4}}>{pickup.working_hours}</div>}
+          </div>
+        )}
+        <button className="btn-secondary" style={{marginBottom:12}} onClick={toggleWishlist}>
+          {wishlisted ? '♥ ' + t(locale,'removeFromWishlist') : '♡ ' + t(locale,'addToWishlist')}
+        </button>
+        <button className="btn-primary" disabled={product.stock <= 0 || buying} onClick={handleBuy}>
+          {product.stock <= 0 ? t(locale,'outOfStock') : (buying ? '…' : t(locale,'buy'))}
+        </button>
+        {product.reviews && product.reviews.length > 0 && (
+          <div style={{marginTop:24}}>
+            <h3 style={{fontSize:15, marginBottom:10}}>{t(locale,'reviews')}</h3>
+            {product.reviews.map((r) => (
+              <div key={r.id} className="card" style={{padding:12, marginBottom:8}}>
+                <div>{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</div>
+                {r.comment && <p style={{margin:'6px 0 0', fontSize:14}}>{r.comment}</p>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [locale, setLocale] = useState(null);
+  const [screen, setScreen] = useState('catalog');
+  const [selectedProductId, setSelectedProductId] = useState(null);
+
+  useEffect(() => {
+    initTelegram();
+    api('/api/users/me').then((user) => { if (user && user.locale) setLocale(user.locale); }).catch(() => {});
+  }, []);
+
+  function chooseLocale(loc) {
+    setLocale(loc);
+    api('/api/users/me', { method:'PATCH', body: JSON.stringify({ locale: loc }) }).catch(() => {});
+  }
+
+  if (!locale) return <LanguageSelect onChoose={chooseLocale} />;
+
+  return (
+    <div className="app-shell">
+      {screen === 'catalog' && (
+        <Catalog locale={locale} onOpenProduct={(id) => { setSelectedProductId(id); setScreen('product'); }} />
+      )}
+      {screen === 'product' && (
+        <ProductDetail locale={locale} productId={selectedProductId} onBack={() => setScreen('catalog')} />
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
