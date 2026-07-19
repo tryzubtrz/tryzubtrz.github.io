@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tryzub Trade — AI Platform</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <div id="loginView" class="login-wrap">
+    <div class="login-box">
+      <h1>Tryzub Trade</h1>
+      <p>AI trading dashboard · Bybit Testnet</p>
+      <label for="user">Username</label>
+      <input id="user" value="admin" autocomplete="username" />
+      <label for="pass">Password</label>
+      <input id="pass" type="password" value="admin" autocomplete="current-password" />
+      <div class="row-actions">
+        <button class="btn" id="loginBtn" type="button">Увійти</button>
+      </div>
+      <div class="err" id="loginErr"></div>
+    </div>
+  </div>
+
+  <div id="appView" class="shell" hidden>
+    <div class="top">
+      <div class="brand">
+        <h1>Tryzub Trade</h1>
+        <p>Автоматизована AI-платформа · реальний час</p>
+      </div>
+      <div class="badge" id="modeBadge">TESTNET</div>
+    </div>
+
+    <div class="grid">
+      <section class="panel span-4">
+        <h2>P&amp;L дня</h2>
+        <div class="metric" id="pnlPct">0.00%</div>
+        <div class="sub" id="pnlAbs">0.00 USDT</div>
+      </section>
+      <section class="panel span-4">
+        <h2>Відкриті позиції</h2>
+        <div class="metric" id="openCount">0</div>
+        <div class="sub" id="riskLine">risk ok</div>
+      </section>
+      <section class="panel span-4">
+        <h2>ML статус</h2>
+        <div class="metric" id="mlAcc" style="font-size:22px">—</div>
+        <div class="sub" id="mlLine">моделі</div>
+      </section>
+
+      <section class="panel span-8">
+        <h2>Ринок · <span id="chartSymbol">BTCUSDT</span></h2>
+        <canvas id="chart" class="chart" width="800" height="220"></canvas>
+        <div class="row-actions">
+          <button class="btn" data-sym="BTCUSDT">BTC</button>
+          <button class="btn" data-sym="ETHUSDT">ETH</button>
+          <button class="btn" data-sym="SOLUSDT">SOL</button>
+          <button class="btn" id="scanBtn">Скан ринку</button>
+        </div>
+      </section>
+
+      <section class="panel span-4">
+        <h2>Останні сигнали</h2>
+        <div id="signals" class="sub">Немає сигналів</div>
+        <div class="row-actions">
+          <button class="btn" id="refreshBtn">Оновити</button>
+        </div>
+      </section>
+
+      <section class="panel span-6">
+        <h2>Відкриті угоди</h2>
+        <table>
+          <thead><tr><th>Пара</th><th>Side</th><th>Entry</th><th></th></tr></thead>
+          <tbody id="openBody"></tbody>
+        </table>
+      </section>
+
+      <section class="panel span-6">
+        <h2>Закриті угоди</h2>
+        <table>
+          <thead><tr><th>Пара</th><th>P&amp;L</th><th>Причина</th></tr></thead>
+          <tbody id="closedBody"></tbody>
+        </table>
+      </section>
+
+      <section class="panel span-12">
+        <h2>Аудит / дії</h2>
+        <table>
+          <thead><tr><th>Час</th><th>Дія</th><th>Деталі</th></tr></thead>
+          <tbody id="auditBody"></tbody>
+        </table>
+      </section>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

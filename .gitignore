@@ -1,0 +1,54 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+.env.enc
+.env.key
+*.key
+*.pem
+!certs/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Data & models (large / generated)
+data/cache/*
+!data/cache/.gitkeep
+data/backups/*
+!data/backups/.gitkeep
+data/models/*
+!data/models/.gitkeep
+data/*.json
+data/*.db
+*.db
+*.sqlite3
+
+# Logs
+logs/*
+!logs/.gitkeep
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+.cursor/
+
+# Certs generated locally
+certs/*.crt
+certs/*.key
+certs/*.pem
+!certs/.gitkeep
