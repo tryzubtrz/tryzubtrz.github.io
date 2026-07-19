@@ -64,6 +64,29 @@ python main.py
 | `python main.py --no-dashboard` | Лише торговий двигун |
 | `python setup.py` | Встановлення / переналаштування |
 
+### Щоденний новий «мозок» + продовження після вимкнення
+
+- Щоночі (~03:00) моделі перенавчаються → **новий brain** у `data/models/`
+- Старі backup’и чистяться (`MODEL_KEEP_VERSIONS=1` = лишити лише вчорашній)
+- Угоди, ризик, сигнали лежать у `data/trading.db` — після рестарту бот **продовжує**, а не вчиться з нуля
+- При старті шле в Telegram: «продовжив роботу» + версія brain
+
+### Автозапуск після увімкнення ПК
+
+**Windows** (один раз у PowerShell з папки проєкту):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install_autostart_windows.ps1
+```
+
+Створює задачу Task Scheduler `TryzubTradeBot` (старт при логіні через `scripts\start_bot.bat`).
+
+**Linux:**
+
+```bash
+bash scripts/install_autostart_linux.sh
+```
+
 Активація середовища:
 
 ```bash

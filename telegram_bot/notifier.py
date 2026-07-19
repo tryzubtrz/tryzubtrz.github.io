@@ -115,3 +115,15 @@ class TelegramNotifier:
 
     def health_alert(self, details: str) -> None:
         self.send(f"🩺 <b>Healthcheck проблема</b>\n{details}")
+
+    def resumed(self, info: dict) -> None:
+        brain = info.get("brain_version") or "—"
+        last_scan = info.get("last_scan_at") or "—"
+        last_retrain = info.get("last_retrain_at") or "—"
+        self.send(
+            "▶️ <b>Бот продовжив роботу</b>\n"
+            "Не з нуля — завантажено збережений стан і мозок.\n"
+            f"Brain: <code>{brain}</code>\n"
+            f"Останній скан: {last_scan}\n"
+            f"Останнє навчання: {last_retrain}"
+        )

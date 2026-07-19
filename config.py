@@ -76,7 +76,8 @@ class Settings(BaseSettings):
     healthcheck_interval_sec: int = 300
     watchdog_max_restarts_per_hour: int = 5
     watchdog_restart_delay_sec: int = 30
-    model_keep_versions: int = 30
+    # How many OLD brain backups to keep after daily retrain (0 = only live brain)
+    model_keep_versions: int = 1
     log_retention_days: int = 30
     log_max_bytes: int = 100 * 1024 * 1024  # 100MB
 

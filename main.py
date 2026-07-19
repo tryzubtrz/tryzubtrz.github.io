@@ -22,8 +22,10 @@ from core.bybit_client import get_bybit_client
 from core.database import Signal, audit, init_db, session_scope
 from core.market_data import MarketDataService
 from core.order_executor import OrderExecutor
+from core.persistence import mark_scan, mark_started, mark_stopped, snapshot
 from core.position_manager import PositionManager
 from core.risk_manager import RiskManager
+from ml.brain_manager import current_brain_files
 from automation.daily_update import DailyUpdatePipeline
 from automation.healthcheck import HealthChecker
 from automation.scheduler import BotScheduler
@@ -93,6 +95,12 @@ class TradingEngine:
             "open_positions": self.positions.open_count(),
             "risk": self.risk.snapshot(),
             "signals": self.latest_signals,
+            "persistence": snapshot(),
+            "brain_files": current_brain_files(),
+            "ml_loaded": {
+                "xgb": self.trainer.ensemble.xgb.trained,
+                "lstm": self.trainer.ensemble.lstm.trained,
+            },
         }
 
     def scan_once(self) -> Dict[str, Any]:
@@ -158,6 +166,7 @@ class TradingEngine:
             if self.risk.state.loss_limit_hit:
                 self.notifier.loss_limit(self.risk.current_pnl_pct())
 
+        mark_scan()
         return {"results": results, "closed": closed_events, "risk": self.risk.snapshot()}
 
     def _loop(self) -> None:
@@ -171,16 +180,36 @@ class TradingEngine:
     def start(self) -> None:
         self._running = True
         self.health.service_flags["engine"] = True
+        # Resume: load is already done in __init__; sync exchange + notify
+        resume_info = mark_started(resume=True)
+        try:
+            self.executor.sync_exits_from_exchange()
+        except Exception as exc:
+            logger.warning("Resume sync failed: %s", exc)
+        self.notifier.resumed(
+            {
+                **resume_info,
+                "brain_files": current_brain_files(),
+                "open_positions": self.positions.open_count(),
+                "risk": self.risk.snapshot(),
+            }
+        )
         self.scheduler.start()
         self._loop_thread = threading.Thread(target=self._loop, name="scan-loop", daemon=True)
         self._loop_thread.start()
         audit("engine_start", details=f"pairs={','.join(self.settings.pairs)}")
-        logger.info("Trading engine started")
+        logger.info(
+            "Trading engine started (resumed brain=%s xgb=%s lstm=%s)",
+            resume_info.get("brain_version"),
+            self.trainer.ensemble.xgb.trained,
+            self.trainer.ensemble.lstm.trained,
+        )
 
     def stop(self) -> None:
         self._running = False
         self.health.service_flags["engine"] = False
         self.scheduler.shutdown()
+        mark_stopped()
         audit("engine_stop")
         logger.info("Trading engine stopped")
 

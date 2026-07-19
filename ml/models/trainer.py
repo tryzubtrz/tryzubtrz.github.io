@@ -12,6 +12,7 @@ import pandas as pd
 from config import MODELS_DIR, BACKUPS_DIR, get_settings
 from core.database import ModelCheckpoint, session_scope
 from core.market_data import MarketDataService
+from ml.brain_manager import promote_new_brain, prune_old_brains
 from ml.models.ensemble import MLEnsemble
 
 logger = logging.getLogger("ai.trainer")
@@ -22,9 +23,11 @@ class ModelTrainer:
         self.settings = get_settings()
         self.market = market or MarketDataService()
         self.ensemble = MLEnsemble()
+        # Load yesterday's / last saved brain — never start "empty" if files exist
         self.ensemble.load()
 
     def backup_models(self) -> Path:
+        """Snapshot current brain before overwriting with today's retrain."""
         BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         dest = BACKUPS_DIR / f"models_{stamp}"
@@ -33,16 +36,9 @@ class ModelTrainer:
             for f in MODELS_DIR.iterdir():
                 if f.is_file() and f.name != ".gitkeep":
                     shutil.copy2(f, dest / f.name)
-        self._prune_backups()
+        # Drop surplus OLD brains (keep only MODEL_KEEP_VERSIONS)
+        prune_old_brains()
         return dest
-
-    def _prune_backups(self) -> None:
-        dirs = sorted(
-            [p for p in BACKUPS_DIR.iterdir() if p.is_dir() and p.name.startswith("models_")],
-            reverse=True,
-        )
-        for old in dirs[self.settings.model_keep_versions :]:
-            shutil.rmtree(old, ignore_errors=True)
 
     def train_all(
         self,
@@ -85,7 +81,9 @@ class ModelTrainer:
                         metrics_json=str(metrics),
                     )
                 )
-        logger.info("Training complete: %s", metrics)
+        # Activate today's brain and delete older brains beyond retention
+        promote_new_brain(str(version), metrics)
+        logger.info("Training complete (new brain=%s): %s", version, metrics)
         return {
             "ok": True,
             "metrics": metrics,
