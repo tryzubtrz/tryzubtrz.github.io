@@ -42,6 +42,11 @@ data/experience/*
 logs/*
 !logs/.gitkeep
 
+# Node / React dashboard
+node_modules/
+dashboard/frontend/dist/
+dashboard/frontend/.vite/
+
 # IDE / OS
 .idea/
 .vscode/

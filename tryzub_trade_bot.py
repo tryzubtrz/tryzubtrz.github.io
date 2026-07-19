@@ -92,6 +92,7 @@ CFG = {
     "testnet": env_bool("BYBIT_TESTNET", True),
     "tg_token": env("TELEGRAM_BOT_TOKEN"),
     "tg_chat": env("TELEGRAM_CHAT_ID"),
+    "tg_allowed_id": env("TELEGRAM_ALLOWED_ID"),
     "dash_user": env("DASHBOARD_USERNAME", "admin"),
     "dash_pass_hash": env("DASHBOARD_PASSWORD_HASH"),
     "jwt_secret": env("JWT_SECRET", secrets.token_urlsafe(32)),
@@ -112,6 +113,14 @@ CFG = {
     "model_keep": env_int("MODEL_KEEP_VERSIONS", 1),
     "exp_max": env_int("EXPERIENCE_MAX_SAMPLES", 50000),
     "log_level": env("LOG_LEVEL", "INFO"),
+    # New feature flags / tuning (Part 9)
+    "scan_interval": env_int("SCAN_INTERVAL_SECONDS", 60),
+    "grid_enabled": env_bool("GRID_ENABLED", False),
+    "funding_enabled": env_bool("FUNDING_ENABLED", False),
+    "tournament_enabled": env_bool("TOURNAMENT_ENABLED", False),
+    "compound_enabled": env_bool("COMPOUND_ENABLED", True),
+    "shadow_mode": env_bool("SHADOW_MODE", True),
+    "force_https": env_bool("FORCE_HTTPS", True),
 }
 
 
@@ -124,6 +133,7 @@ BYBIT_API_SECRET=
 BYBIT_TESTNET=true
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
+TELEGRAM_ALLOWED_ID=        # Твій Telegram User ID (дізнатись через @userinfobot)
 DASHBOARD_USERNAME=admin
 DASHBOARD_PASSWORD_HASH=
 JWT_SECRET={jwt}
@@ -139,6 +149,16 @@ LOG_LEVEL=INFO
 TIMEZONE=Europe/Kyiv
 DASHBOARD_HOST=0.0.0.0
 DASHBOARD_PORT=8080
+FORCE_HTTPS=true
+SCAN_INTERVAL_SECONDS=60    # Як часто сканувати ринок
+GRID_ENABLED=false          # Grid Trading увімкнений
+FUNDING_ENABLED=false       # Funding Rate Harvesting
+TOURNAMENT_ENABLED=false    # Tournament Mode
+COMPOUND_ENABLED=true       # Складний відсоток
+SHADOW_MODE=true            # Тіньовий портфель
+MIN_CONFIDENCE=0.62         # Мінімальна впевненість для входу
+TAKE_PROFIT_PCT=1.5
+STOP_LOSS_PCT=0.8
 """.format(jwt=secrets.token_urlsafe(32)),
         encoding="utf-8",
     )
@@ -363,12 +383,22 @@ def get_state(key: str, default: str = "") -> str:
 class Telegram:
     def __init__(self) -> None:
         self.token = CFG["tg_token"]
-        self.chat = CFG["tg_chat"]
+        # Prefer TELEGRAM_ALLOWED_ID when set (security allow-list)
+        self.chat = CFG["tg_allowed_id"] or CFG["tg_chat"]
+        self.allowed_id = (CFG["tg_allowed_id"] or CFG["tg_chat"] or "").strip()
         self.on = bool(self.token and self.chat)
+
+    def _allowed(self, chat_id: str) -> bool:
+        if not self.allowed_id:
+            return True
+        return str(chat_id).strip() == str(self.allowed_id).strip()
 
     def send(self, text: str) -> None:
         if not self.on:
             log.debug("TG skip: %s", text[:80])
+            return
+        if not self._allowed(self.chat):
+            log.warning("Telegram blocked — chat_id not in TELEGRAM_ALLOWED_ID")
             return
         try:
             requests.post(
@@ -377,6 +407,7 @@ class Telegram:
                 timeout=20,
             )
             audit("telegram", text[:200])
+            log.info("Telegram sent (%s chars)", len(text))
         except Exception as exc:
             log.error("Telegram: %s", exc)
 
@@ -1143,8 +1174,19 @@ class Positions:
 
 
 class Executor:
-    def __init__(self, client: Bybit, market: Market, risk: Risk, positions: Positions, tg: Telegram) -> None:
+    def __init__(
+        self,
+        client: Bybit,
+        market: Market,
+        risk: Risk,
+        positions: Positions,
+        tg: Telegram,
+        compound=None,
+        tournament=None,
+    ) -> None:
         self.c, self.m, self.r, self.p, self.tg = client, market, risk, positions, tg
+        self.compound = compound
+        self.tournament = tournament
 
     def execute(self, sig: Signal) -> dict:
         if sig.direction == "flat" or sig.confidence < CFG["min_confidence"]:
@@ -1156,7 +1198,11 @@ class Executor:
             return {"executed": False, "reason": "already_open"}
         price = self.m.price(sig.symbol)
         bal = self.c.balance()
-        qty = self.r.qty(self.r.size_usd(bal, sig.confidence), price)
+        if self.compound is not None:
+            usd = self.compound.size_usd(bal, sig.confidence, self.r.size_usd)
+        else:
+            usd = self.r.size_usd(bal, sig.confidence)
+        qty = self.r.qty(usd, price)
         if qty <= 0:
             return {"executed": False, "reason": "qty_zero"}
         side = "Buy" if sig.direction == "long" else "Sell"
@@ -1166,6 +1212,7 @@ class Executor:
             order = self.c.place(sig.symbol, side, qty, lv["take_profit"], lv["stop_loss"])
             oid = (order.get("result") or {}).get("orderId", "")
             tid = self.p.open(symbol=sig.symbol, side=side, qty=qty, entry_price=price, leverage=CFG["leverage"], strategy=sig.strategy, confidence=sig.confidence, order_id=oid)
+            log.info("Executed %s %s qty=%s strategy=%s", side, sig.symbol, qty, sig.strategy)
             return {"executed": True, "trade": {"id": tid, "symbol": sig.symbol, "side": side, "qty": qty, "entry_price": price}}
         except Exception as exc:
             log.exception("execute")
@@ -1181,6 +1228,11 @@ class Executor:
             price = self.m.price(pos["symbol"])
             result = self.p.close(pos["id"], price, "exchange_flat")
             goals = self.r.register(result["pnl"], self.c.balance())
+            if self.tournament is not None:
+                try:
+                    self.tournament.record(result.get("strategy") or pos.get("strategy") or "", float(result.get("pnl_pct") or 0))
+                except Exception as exc:
+                    log.warning("Tournament record failed: %s", exc)
             self.tg.trade_closed(result)
             for g in goals:
                 self.tg.goal(g, self.r.pnl_pct())
@@ -1206,35 +1258,109 @@ def detect_anomaly(symbol: str, df: pd.DataFrame) -> List[dict]:
 
 
 # =============================================================================
-# ENGINE
+# ENGINE (+ grid / funding / news / tournament / compound / shadow / ws)
 # =============================================================================
 class Engine:
     def __init__(self) -> None:
+        try:
+            from grid_strategy import GridStrategy
+            from funding_strategy import FundingStrategy
+            from intelligence import NewsIntelligence
+            from tournament import TournamentMode
+            from compound import CompoundSizer
+            from shadow_portfolio import ShadowPortfolio
+            from ws_feed import BybitWSFeed
+        except Exception as exc:
+            log.error("Optional module import failed: %s", exc)
+            GridStrategy = FundingStrategy = NewsIntelligence = TournamentMode = None  # type: ignore
+            CompoundSizer = ShadowPortfolio = BybitWSFeed = None  # type: ignore
+
         self.client = Bybit()
         self.market = Market(self.client)
         self.risk = Risk()
         self.positions = Positions()
         self.tg = Telegram()
-        self.exec = Executor(self.client, self.market, self.risk, self.positions, self.tg)
         self.memory = ExperienceMemory()
         self.brain = Brain()
         self.brain.load()
+
+        self.grid = GridStrategy(enabled=CFG["grid_enabled"]) if GridStrategy else None
+        self.funding = (
+            FundingStrategy(enabled=CFG["funding_enabled"], testnet=CFG["testnet"]) if FundingStrategy else None
+        )
+        self.intel = NewsIntelligence() if NewsIntelligence else None
+        self.tournament = (
+            TournamentMode(DATA / "tournament_state.json", enabled=CFG["tournament_enabled"])
+            if TournamentMode
+            else None
+        )
+        self.compound = (
+            CompoundSizer(
+                enabled=CFG["compound_enabled"],
+                base_balance=CFG["initial_balance"],
+                max_position_pct=CFG["max_position_pct"],
+            )
+            if CompoundSizer
+            else None
+        )
+        self.shadow = (
+            ShadowPortfolio(
+                DATA / "shadow_portfolio.json",
+                enabled=CFG["shadow_mode"],
+                start_equity=CFG["initial_balance"],
+            )
+            if ShadowPortfolio
+            else None
+        )
+        self.ws = BybitWSFeed(CFG["pairs"], testnet=CFG["testnet"]) if BybitWSFeed else None
+
+        self.exec = Executor(
+            self.client,
+            self.market,
+            self.risk,
+            self.positions,
+            self.tg,
+            compound=self.compound,
+            tournament=self.tournament,
+        )
         self.signals: Dict[str, dict] = {}
+        self.last_news: Dict[str, Any] = {}
         self._running = False
         self._thread: Optional[threading.Thread] = None
 
     def status(self) -> dict:
+        bal = CFG["initial_balance"]
+        try:
+            bal = self.client.balance()
+        except Exception:
+            pass
         return {
             "running": self._running,
             "testnet": CFG["testnet"],
             "pairs": CFG["pairs"],
             "ip": self.client.ip,
+            "scan_interval": CFG["scan_interval"],
+            "features": {
+                "grid": CFG["grid_enabled"],
+                "funding": CFG["funding_enabled"],
+                "tournament": CFG["tournament_enabled"],
+                "compound": CFG["compound_enabled"],
+                "shadow": CFG["shadow_mode"],
+            },
             "risk": self.risk.snap(),
             "open": self.positions.open_list(),
             "signals": self.signals,
             "ml": self.brain.metrics,
             "experience": self.memory.stats(),
             "brain_version": get_state("brain_version"),
+            "news": self.last_news,
+            "tournament": self.tournament.snapshot() if self.tournament else {},
+            "compound": self.compound.snapshot(bal) if self.compound else {},
+            "shadow": self.shadow.snapshot() if self.shadow else {},
+            "ws": {
+                "connected": bool(self.ws and self.ws.connected),
+                "prices": (self.ws.prices if self.ws else {}),
+            },
             "persistence": {
                 "last_scan_at": get_state("last_scan_at"),
                 "last_retrain_at": get_state("last_retrain_at"),
@@ -1244,22 +1370,98 @@ class Engine:
 
     def scan_once(self) -> dict:
         results = []
+        if self.intel is not None:
+            try:
+                self.last_news = self.intel.fetch()
+            except Exception as exc:
+                log.warning("News fetch: %s", exc)
+
         for symbol in CFG["pairs"]:
             try:
                 df = self.market.ohlcv(symbol, 250)
+                if self.ws and self.ws.get_price(symbol):
+                    try:
+                        df = df.copy()
+                        df.loc[df.index[-1], "close"] = self.ws.get_price(symbol)
+                    except Exception:
+                        pass
+
                 for a in detect_anomaly(symbol, df):
                     self.tg.anomaly(a)
-                ml = self.brain.predict(symbol, df)
-                sig = ensemble_signal(symbol, df, ml)
-                self.signals[symbol] = sig.to_dict()
+
+                candidates = []
+                try:
+                    ml = self.brain.predict(symbol, df)
+                    candidates.append(ml.to_dict())
+                    base = ensemble_signal(symbol, df, ml)
+                    candidates.append(base.to_dict())
+                except Exception as exc:
+                    log.error("core signal %s: %s", symbol, exc)
+                    ml = Signal(symbol, "flat", 0.0, "ml")
+                    base = Signal(symbol, "flat", 0.0, "ensemble")
+
+                if self.grid is not None:
+                    try:
+                        candidates.append(self.grid.generate(symbol, df))
+                    except Exception as exc:
+                        log.error("grid %s: %s", symbol, exc)
+                if self.funding is not None:
+                    try:
+                        candidates.append(self.funding.generate(symbol))
+                    except Exception as exc:
+                        log.error("funding %s: %s", symbol, exc)
+                if self.intel is not None:
+                    try:
+                        candidates.append(self.intel.bias_signal(symbol))
+                    except Exception as exc:
+                        log.error("news %s: %s", symbol, exc)
+
+                if self.tournament is not None:
+                    picked = self.tournament.pick(candidates)
+                else:
+                    valid = [c for c in candidates if c.get("direction") in {"long", "short"}]
+                    picked = (
+                        max(valid, key=lambda x: float(x.get("confidence") or 0))
+                        if valid
+                        else {"direction": "flat", "confidence": 0.0, "strategy": "ensemble"}
+                    )
+
+                sig = Signal(
+                    symbol,
+                    picked.get("direction", "flat"),
+                    float(picked.get("confidence") or 0),
+                    picked.get("strategy") or "ensemble",
+                )
+                self.signals[symbol] = {**sig.to_dict(), "candidates": candidates}
+
+                if self.shadow is not None:
+                    try:
+                        px = float(df["close"].iloc[-1])
+                        self.shadow.step(symbol, sig.direction, sig.confidence, px)
+                    except Exception as exc:
+                        log.error("shadow %s: %s", symbol, exc)
+
                 ex = self.exec.execute(sig)
-                results.append({"symbol": symbol, "signal": sig.to_dict(), "ml": ml.to_dict(), "execution": ex})
+                results.append(
+                    {
+                        "symbol": symbol,
+                        "signal": sig.to_dict(),
+                        "ml": ml.to_dict(),
+                        "candidates": candidates,
+                        "execution": ex,
+                    }
+                )
             except Exception as exc:
                 log.exception("scan %s", symbol)
                 results.append({"symbol": symbol, "error": str(exc)})
         closed = self.exec.sync()
         set_state("last_scan_at", utcnow().isoformat())
-        return {"results": results, "closed": closed, "risk": self.risk.snap()}
+        return {
+            "results": results,
+            "closed": closed,
+            "risk": self.risk.snap(),
+            "shadow": self.shadow.snapshot() if self.shadow else {},
+        }
 
     def train(self, epochs: int = 8) -> dict:
         for sym in CFG["pairs"]:
@@ -1275,7 +1477,13 @@ class Engine:
         ver = str(int(time.time()))
         set_state("brain_version", ver)
         set_state("last_retrain_at", utcnow().isoformat())
-        report = {"ok": True, "metrics": metrics, "version": ver, "experience": self.memory.stats(), "new_lessons": lessons}
+        report = {
+            "ok": True,
+            "metrics": metrics,
+            "version": ver,
+            "experience": self.memory.stats(),
+            "new_lessons": lessons,
+        }
         self.tg.retrain(report)
         return report
 
@@ -1289,12 +1497,24 @@ class Engine:
         set_state("last_started_at", utcnow().isoformat())
         self.tg.resumed(info)
         self.exec.sync()
+        if self.ws is not None:
+            try:
+                self.ws.start()
+            except Exception as exc:
+                log.warning("WS start failed: %s", exc)
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
         audit("engine_start", str(CFG["pairs"]))
-        # simple daily retrain scheduler thread
         threading.Thread(target=self._nightly, daemon=True).start()
-        log.info("Engine started (continual learning ON)")
+        log.info(
+            "Engine started scan_interval=%ss grid=%s funding=%s tournament=%s compound=%s shadow=%s",
+            CFG["scan_interval"],
+            CFG["grid_enabled"],
+            CFG["funding_enabled"],
+            CFG["tournament_enabled"],
+            CFG["compound_enabled"],
+            CFG["shadow_mode"],
+        )
 
     def _loop(self) -> None:
         while self._running:
@@ -1302,7 +1522,7 @@ class Engine:
                 self.scan_once()
             except Exception:
                 log.exception("loop")
-            time.sleep(60)
+            time.sleep(CFG["scan_interval"])
 
     def _nightly(self) -> None:
         import pytz
@@ -1320,6 +1540,11 @@ class Engine:
 
     def stop(self) -> None:
         self._running = False
+        if self.ws is not None:
+            try:
+                self.ws.stop()
+            except Exception:
+                pass
         set_state("last_shutdown_at", utcnow().isoformat())
 
 
@@ -1374,65 +1599,103 @@ setInterval(()=>{ if(token) refresh().catch(()=>{}); }, 15000);
 
 
 def create_app(engine: Engine):
-    from fastapi import Depends, FastAPI, HTTPException, Request, Response
-    from fastapi.responses import HTMLResponse
-    from pydantic import BaseModel
-    from slowapi import Limiter
-    from slowapi.errors import RateLimitExceeded
-    from slowapi.middleware import SlowAPIMiddleware
-    from slowapi.util import get_remote_address
+    """FastAPI app — auth via Request.headers (future-annotations safe)."""
+    from collections import defaultdict, deque
 
-    limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+    from fastapi import FastAPI, HTTPException, Request
+    from fastapi.responses import HTMLResponse
+
     app = FastAPI(title="Tryzub Trade Single-File")
     app.state.engine = engine
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, lambda r, e: Response("rate limit", 429))
-    app.add_middleware(SlowAPIMiddleware)
+    hits = defaultdict(deque)
 
-    class Login(BaseModel):
-        username: str
-        password: str
+    def bump(key: str, limit: int = 60) -> None:
+        now = time.time()
+        q = hits[key]
+        while q and now - q[0] > 60:
+            q.popleft()
+        if len(q) >= limit:
+            raise HTTPException(429, "rate limit")
+        q.append(now)
 
-    def user(request: Request):
-        auth = request.headers.get("Authorization", "")
-        token = auth.replace("Bearer ", "") if auth.startswith("Bearer ") else ""
+    def user_from_request(request) -> str:
+        """Read Bearer token manually — Annotated/Header breaks under future annotations."""
+        bump("auth", 120)
+        authorization = request.headers.get("authorization") or request.headers.get("Authorization") or ""
+        if not authorization.lower().startswith("bearer "):
+            raise HTTPException(401, "Not authenticated")
+        token = authorization.split(" ", 1)[1].strip()
         if not token:
             raise HTTPException(401, "Not authenticated")
         try:
-            return decode_token(token)["sub"]
+            return str(decode_token(token)["sub"])
         except Exception as exc:
             raise HTTPException(401, "bad token") from exc
 
+    def _mark_request(fn):
+        """Force real Request type so FastAPI injects it despite future annotations."""
+        fn.__annotations__ = {"request": Request, "return": Any}
+        return fn
+
     @app.get("/", response_class=HTMLResponse)
-    def index():
+    async def index():
         return DASH_HTML
 
-    @app.post("/api/login")
-    @limiter.limit("10/minute")
-    def login(request: Request, response: Response, body: Login):
-        if body.username != CFG["dash_user"] or not verify_password(body.password, CFG["dash_pass_hash"]):
+    @_mark_request
+    async def login(request):
+        """Raw JSON body — avoids future-annotations + Pydantic edge cases."""
+        bump("login", 10)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        username = str((body or {}).get("username") or "")
+        password = str((body or {}).get("password") or "")
+        if username != CFG["dash_user"] or not verify_password(password, CFG["dash_pass_hash"]):
             raise HTTPException(401, "Invalid credentials")
-        return {"token": make_token(body.username)}
+        return {"token": make_token(username)}
 
-    @app.get("/api/status")
-    @limiter.limit("60/minute")
-    def status(request: Request, response: Response, u: str = Depends(user)):
+    @_mark_request
+    async def status(request):
+        user_from_request(request)
         return engine.status()
 
-    @app.get("/api/trades")
-    @limiter.limit("60/minute")
-    def trades(request: Request, response: Response, u: str = Depends(user)):
+    @_mark_request
+    async def trades(request):
+        user_from_request(request)
         return {"open": engine.positions.open_list(), "closed": engine.positions.closed_list()}
 
-    @app.post("/api/scan")
-    @limiter.limit("10/minute")
-    def scan(request: Request, response: Response, u: str = Depends(user)):
+    @_mark_request
+    async def scan(request):
+        user_from_request(request)
+        bump("scan", 10)
         return engine.scan_once()
 
-    @app.get("/api/ping")
-    def ping():
+    async def ping():
         return {"ok": True, "single_file": True}
 
+    @_mark_request
+    async def features(request):
+        user_from_request(request)
+        st = engine.status()
+        return {
+            "features": st.get("features"),
+            "shadow": st.get("shadow"),
+            "tournament": st.get("tournament"),
+            "compound": st.get("compound"),
+            "news": {
+                "score": (st.get("news") or {}).get("score"),
+                "updated_at": (st.get("news") or {}).get("updated_at"),
+            },
+            "ws": st.get("ws"),
+        }
+
+    app.add_api_route("/api/login", login, methods=["POST"])
+    app.add_api_route("/api/status", status, methods=["GET"])
+    app.add_api_route("/api/trades", trades, methods=["GET"])
+    app.add_api_route("/api/scan", scan, methods=["POST"])
+    app.add_api_route("/api/ping", ping, methods=["GET"])
+    app.add_api_route("/api/features", features, methods=["GET"])
     return app
 
 
@@ -1477,10 +1740,21 @@ def main(argv: Optional[list] = None) -> int:
 
     import uvicorn
 
-    cert, key = gen_certs()
-    log.info("Dashboard https://%s:%s", CFG["host"], CFG["port"])
     app = create_app(engine)
-    uvicorn.run(app, host=CFG["host"], port=CFG["port"], ssl_certfile=str(cert), ssl_keyfile=str(key), log_level="info")
+    if CFG["force_https"]:
+        cert, key = gen_certs()
+        log.info("Dashboard https://%s:%s", CFG["host"], CFG["port"])
+        uvicorn.run(
+            app,
+            host=CFG["host"],
+            port=CFG["port"],
+            ssl_certfile=str(cert),
+            ssl_keyfile=str(key),
+            log_level="info",
+        )
+    else:
+        log.info("Dashboard http://%s:%s", CFG["host"], CFG["port"])
+        uvicorn.run(app, host=CFG["host"], port=CFG["port"], log_level="info")
     return 0
 
 

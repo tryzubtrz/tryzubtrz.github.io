@@ -1,0 +1,22 @@
+:root {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: #e7f0ea;
+  background: #0e1412;
+}
+body { margin: 0; background: radial-gradient(900px 400px at 10% 0%, rgba(61,206,167,.12), transparent), #0e1412; }
+.shell { max-width: 960px; margin: 0 auto; padding: 24px; }
+h1 { margin: 0 0 8px; }
+header { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+.badge { border: 1px solid #259f7d; color: #3dcea7; padding: 4px 8px; font-size: 12px; }
+.panel { border: 1px solid #2a3d34; background: #15201c; padding: 14px; margin: 12px 0; }
+.muted { color: #8fa399; font-size: 13px; }
+.metric { font-size: 32px; font-weight: 700; }
+.metric.pos { color: #3dcea7; }
+.metric.neg { color: #e85d5d; }
+input, button { display: block; margin: 8px 0; padding: 10px 12px; }
+input { width: min(320px, 100%); background: #0e1412; border: 1px solid #2a3d34; color: #fff; }
+button { background: #259f7d; color: #fff; border: 0; cursor: pointer; margin-right: 8px; display: inline-block; }
+pre { white-space: pre-wrap; font-size: 12px; color: #c9d8cf; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+td { border-bottom: 1px solid #2a3d34; padding: 6px; }
+.err { color: #e85d5d; }

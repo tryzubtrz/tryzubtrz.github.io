@@ -60,3 +60,9 @@ pyOpenSSL>=24.1.0
 # Testing helpers
 pytest>=8.2.0
 pytest-asyncio>=0.23.7
+
+# News / intelligence
+feedparser>=6.0
+
+# Note: React dashboard (Vite) is an npm project under dashboard/frontend
+#   cd dashboard/frontend && npm install && npm run dev
