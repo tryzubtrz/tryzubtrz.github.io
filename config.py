@@ -76,8 +76,11 @@ class Settings(BaseSettings):
     healthcheck_interval_sec: int = 300
     watchdog_max_restarts_per_hour: int = 5
     watchdog_restart_delay_sec: int = 30
-    # How many OLD brain backups to keep after daily retrain (0 = only live brain)
+    # How many OLD brain FILE SNAPSHOTS to keep (disk only; experience memory is never deleted)
     model_keep_versions: int = 1
+    # Lifelong experience memory size (market rows). Trade lessons are kept preferentially.
+    experience_max_samples: int = 50_000
+    continual_learning: bool = True
     log_retention_days: int = 30
     log_max_bytes: int = 100 * 1024 * 1024  # 100MB
 

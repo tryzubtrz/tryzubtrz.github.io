@@ -33,6 +33,8 @@ data/models/*
 !data/models/.gitkeep
 data/*.json
 data/*.db
+data/experience/*
+!data/experience/.gitkeep
 *.db
 *.sqlite3
 

@@ -70,10 +70,26 @@ class LSTMModel:
         batch_size: int = 64,
         lr: float = 1e-3,
         val_split: float = 0.15,
+        warm_start: bool = True,
     ) -> Dict[str, float]:
+        """
+        Continual learning: keep existing weights when warm_start=True
+        (only rebuild network if feature count changed).
+        """
         if len(X_seq) < 50:
             logger.warning("Not enough LSTM samples (%s)", len(X_seq))
             return {"accuracy": 0.0, "samples": float(len(X_seq))}
+
+        n_features = int(X_seq.shape[-1])
+        continued = False
+        if warm_start and self.trained and self.n_features == n_features:
+            # Continue from previous brain — do NOT reset weights
+            continued = True
+            lr = min(lr, 3e-4)  # finer steps when improving an existing brain
+            logger.info("LSTM warm-start from previous brain lr=%s", lr)
+        else:
+            self.n_features = n_features
+            self.model = LSTMClassifier(n_features).to(self.device)
 
         y_idx = self._to_class_index(y)
         n = len(X_seq)
@@ -104,8 +120,19 @@ class LSTMModel:
 
         acc = self._eval_accuracy(X_val, y_val)
         self.trained = True
-        self.metrics = {"accuracy": acc, "samples": float(n), "epochs": float(epochs)}
-        logger.info("LSTM trained acc=%.3f samples=%s device=%s", acc, n, self.device)
+        self.metrics = {
+            "accuracy": acc,
+            "samples": float(n),
+            "epochs": float(epochs),
+            "warm_start": float(1.0 if continued else 0.0),
+        }
+        logger.info(
+            "LSTM trained acc=%.3f samples=%s device=%s warm_start=%s",
+            acc,
+            n,
+            self.device,
+            continued,
+        )
         return self.metrics
 
     def _eval_accuracy(self, X_val: np.ndarray, y_val: np.ndarray) -> float:

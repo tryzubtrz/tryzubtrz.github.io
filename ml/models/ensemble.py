@@ -1,7 +1,7 @@
-"""Combine LSTM + XGBoost into a single ML vote."""
+"""Combine LSTM + XGBoost into a single ML vote (continual learning)."""
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -21,19 +21,44 @@ class MLEnsemble:
         self.lstm_weight = 0.45
         self.selected_features = list(EXTENDED_FEATURES)
 
-    def train_on_df(self, df: pd.DataFrame, epochs: int = 12) -> Dict[str, Dict[str, float]]:
-        X, y_class, _ = make_supervised(df, feature_cols=self.selected_features)
-        xgb_metrics = self.xgb.fit(X, y_class)
+    def train_on_xy(
+        self,
+        X: pd.DataFrame,
+        y_class: pd.Series,
+        epochs: int = 12,
+        warm_start: bool = True,
+    ) -> Dict[str, Dict[str, float]]:
+        """Train on an arbitrary cumulative dataset (experience memory)."""
+        if X.empty or len(X) < 50:
+            return {
+                "xgboost": {"accuracy": 0.0, "samples": float(len(X))},
+                "lstm": {"accuracy": 0.0, "samples": float(len(X))},
+            }
+
+        xgb_metrics = self.xgb.fit(X, y_class, warm_start=warm_start)
         X_np = X.to_numpy(dtype=np.float32)
-        # Standardize for LSTM
+
+        # Running scaler: blend with previous mean/std so old knowledge scale stays stable
         mean, std = X_np.mean(axis=0), X_np.std(axis=0) + 1e-8
-        self._mean, self._std = mean, std
-        X_norm = (X_np - mean) / std
+        if warm_start and hasattr(self, "_mean") and len(self._mean) == len(mean):
+            mean = 0.8 * self._mean + 0.2 * mean
+            std = 0.8 * self._std + 0.2 * std
+        self._mean, self._std = mean.astype(np.float32), std.astype(np.float32)
+
+        X_norm = (X_np - self._mean) / self._std
         X_seq, y_seq = sequence_windows(X_norm, y_class.to_numpy(), seq_len=self.seq_len)
-        self.lstm.n_features = X_norm.shape[1]
-        self.lstm.model = self.lstm.model.__class__(self.lstm.n_features).to(self.lstm.device)
-        lstm_metrics = self.lstm.fit(X_seq, y_seq, epochs=epochs)
+        # IMPORTANT: do NOT recreate LSTM weights here — fit() warm-starts
+        lstm_metrics = self.lstm.fit(X_seq, y_seq, epochs=epochs, warm_start=warm_start)
         return {"xgboost": xgb_metrics, "lstm": lstm_metrics}
+
+    def train_on_df(
+        self,
+        df: pd.DataFrame,
+        epochs: int = 12,
+        warm_start: bool = True,
+    ) -> Dict[str, Dict[str, float]]:
+        X, y_class, _ = make_supervised(df, feature_cols=self.selected_features)
+        return self.train_on_xy(X, y_class, epochs=epochs, warm_start=warm_start)
 
     def predict(self, symbol: str, df: pd.DataFrame) -> StrategySignal:
         data = build_feature_frame(df)
@@ -45,11 +70,14 @@ class MLEnsemble:
         xgb_dir, xgb_conf = ("flat", 0.0)
         lstm_dir, lstm_conf = ("flat", 0.0)
         if self.xgb.trained:
-            xgb_dir, xgb_conf = self.xgb.predict_proba_direction(row.iloc[[-1]][self.xgb.feature_names])
+            xgb_dir, xgb_conf = self.xgb.predict_proba_direction(
+                row.iloc[[-1]][self.xgb.feature_names]
+            )
 
         if self.lstm.trained and hasattr(self, "_mean"):
             X_np = row[cols].to_numpy(dtype=np.float32)
-            X_norm = (X_np - self._mean[: X_np.shape[1]]) / self._std[: X_np.shape[1]]
+            n = min(X_np.shape[1], len(self._mean))
+            X_norm = (X_np[:, :n] - self._mean[:n]) / self._std[:n]
             if len(X_norm) >= self.seq_len:
                 window = X_norm[-self.seq_len :][None, ...]
                 lstm_dir, lstm_conf = self.lstm.predict_proba_direction(window)
@@ -74,7 +102,6 @@ class MLEnsemble:
             "xgb": str(self.xgb.save()),
             "lstm": str(self.lstm.save()),
         }
-        # Persist scaler + selected features
         import json
         from config import MODELS_DIR
 

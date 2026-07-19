@@ -97,12 +97,15 @@ class TelegramNotifier:
         metrics = report.get("metrics") or {}
         xgb = metrics.get("xgboost") or {}
         lstm = metrics.get("lstm") or {}
+        exp = report.get("experience") or {}
         self.send(
-            f"🧠 <b>Результат нічного перенавчання</b>\n"
+            f"🧠 <b>Нічне донавчання (без забування)</b>\n"
             f"Статус: {'OK' if report.get('ok') else 'FAIL'}\n"
-            f"XGBoost acc: {xgb.get('accuracy', 0):.3f} | f1: {xgb.get('f1', 0):.3f}\n"
-            f"LSTM acc: {lstm.get('accuracy', 0):.3f}\n"
-            f"Версія: {report.get('version', '—')}\n"
+            f"XGBoost acc: {xgb.get('accuracy', 0):.3f} | warm: {int(xgb.get('warm_start', 0))}\n"
+            f"LSTM acc: {lstm.get('accuracy', 0):.3f} | warm: {int(lstm.get('warm_start', 0))}\n"
+            f"Пам’ять досвіду: {exp.get('market_rows', '—')} рядків | "
+            f"уроки: {exp.get('trade_lessons_logged', '—')}\n"
+            f"Версія brain: {report.get('version', '—')}\n"
             f"GA fitness: {report.get('ga_fitness', '—')}\n"
             f"Shadow switch: {report.get('shadow_switch', False)}"
         )

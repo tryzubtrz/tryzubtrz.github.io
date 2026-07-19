@@ -61,14 +61,25 @@ class DailyUpdatePipeline:
         report["symbols"] = list(market_data.keys())
         report["news"] = news
 
-        # 2. Error analysis
+        # 2. Error analysis — lessons are also written into lifelong experience memory
         report["error_analysis"] = self._analyze_losses(trades)
+        try:
+            from ml.experience_memory import ExperienceMemory
+
+            mem = ExperienceMemory()
+            report["lessons_ingested"] = mem.ingest_trade_lessons(
+                feature_cols=self.trainer.ensemble.selected_features
+            )
+            report["experience_before_train"] = mem.stats()
+        except Exception as exc:
+            logger.warning("Lesson ingest failed: %s", exc)
+            report["lessons_ingested"] = 0
 
         # Combined frame for ML/GA
         frames = [df for df in market_data.values() if len(df) > 100]
         combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
-        # 3. Retrain ML
+        # 3. Retrain ML on FULL memory + warm-start (does not forget past mistakes)
         train_result = self.trainer.train_all(epochs=10)
         report.update(
             {
@@ -76,6 +87,8 @@ class DailyUpdatePipeline:
                 "metrics": train_result.get("metrics"),
                 "version": train_result.get("version"),
                 "paths": train_result.get("paths"),
+                "experience": train_result.get("experience"),
+                "continual_learning": True,
             }
         )
 

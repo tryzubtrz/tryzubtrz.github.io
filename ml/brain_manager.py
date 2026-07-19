@@ -1,7 +1,11 @@
 """
-Daily "brain" rotation:
-- Keep the live models in data/models/ (always the current brain)
-- On retrain: backup previous brain, save new one, delete older backups
+Daily "brain" file snapshots (disk hygiene ONLY).
+
+IMPORTANT:
+- Deleting old backups does NOT erase knowledge / mistakes.
+- Lifelong learning lives in data/experience/ (never pruned here)
+  and in the evolving live weights under data/models/.
+- prune_old_brains() only removes duplicate snapshot folders to save disk.
 """
 from __future__ import annotations
 

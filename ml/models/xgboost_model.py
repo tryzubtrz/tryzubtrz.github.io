@@ -40,7 +40,16 @@ class XGBoostDirectionModel:
     def _map_y(y: np.ndarray) -> np.ndarray:
         return (y + 1).astype(int)  # -1,0,1 → 0,1,2
 
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
+    def fit(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        warm_start: bool = True,
+    ) -> Dict[str, float]:
+        """
+        Continual learning: if a previous model exists with the same features,
+        continue boosting from it (xgb_model=...) instead of forgetting.
+        """
         self.feature_names = list(X.columns)
         y_mapped = self._map_y(y.to_numpy())
         if len(X) < 80:
@@ -50,17 +59,36 @@ class XGBoostDirectionModel:
         X_train, X_val, y_train, y_val = train_test_split(
             X, y_mapped, test_size=0.2, shuffle=False
         )
-        self.model.fit(X_train, y_train)
+
+        fit_kwargs = {}
+        if (
+            warm_start
+            and self.trained
+            and hasattr(self.model, "get_booster")
+            and list(getattr(self.model, "feature_names_in_", self.feature_names)) == self.feature_names
+        ):
+            try:
+                fit_kwargs["xgb_model"] = self.model.get_booster()
+                logger.info("XGBoost warm-start from previous brain (continual learning)")
+            except Exception:
+                fit_kwargs = {}
+
+        self.model.fit(X_train, y_train, **fit_kwargs)
         pred = self.model.predict(X_val)
         acc = float(accuracy_score(y_val, pred))
         f1 = float(f1_score(y_val, pred, average="macro"))
         self.trained = True
-        self.metrics = {"accuracy": acc, "f1": f1, "samples": float(len(X))}
+        self.metrics = {
+            "accuracy": acc,
+            "f1": f1,
+            "samples": float(len(X)),
+            "warm_start": float(1.0 if fit_kwargs else 0.0),
+        }
         importances = self.model.feature_importances_
         self.feature_importances_ = {
             name: float(score) for name, score in zip(self.feature_names, importances)
         }
-        logger.info("XGBoost trained acc=%.3f f1=%.3f", acc, f1)
+        logger.info("XGBoost trained acc=%.3f f1=%.3f warm_start=%s", acc, f1, bool(fit_kwargs))
         return self.metrics
 
     def predict_proba_direction(self, X_row: pd.DataFrame) -> Tuple[str, float]:
