@@ -178,7 +178,12 @@ class LSTMModel:
         self.n_features = blob.get("n_features", self.n_features)
         self.seq_len = blob.get("seq_len", self.seq_len)
         self.model = LSTMClassifier(self.n_features).to(self.device)
-        self.model.load_state_dict(blob["state_dict"])
+        try:
+            self.model.load_state_dict(blob["state_dict"])
+            self.trained = True
+        except Exception as exc:
+            logger.warning("LSTM checkpoint incompatible (%s) — will retrain fresh", exc)
+            self.trained = False
+            return False
         self.metrics = blob.get("metrics", {})
-        self.trained = True
         return True
